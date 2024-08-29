@@ -210,7 +210,7 @@ Conflicts:      %{srcname}-vdpau-drivers%{?_isa}
 %package        -n %{srcname}-vulkan-drivers-freeworld
 Summary:        Mesa Vulkan drivers
 Requires:       vulkan%{_isa}
-Conflicts:      %{srcname}-vulkan%{?_isa}
+Conflicts:      %{srcname}-vulkan-drivers%{?_isa}
 
 %description    -n %{srcname}-vulkan-drivers-freeworld
 The drivers with support for the Vulkan API.
