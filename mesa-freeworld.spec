@@ -5,20 +5,20 @@ algorithms and decoding only VC1 algorithm.
 %global with_hardware 1
 %global with_radeonsi 1
 %global with_vmware 1
-%global with_vulkan_hw 0
+%global with_vulkan_hw 1
 %global with_vdpau 1
 %global with_va 1
 %if !0%{?rhel}
 %global with_r300 1
 %global with_r600 1
 %global with_nine 0
-#%%if 0%%{?with_vulkan_hw}
-%global with_nvk 0
-#%%endif
+%if 0%{?with_vulkan_hw}
+%global with_nvk %{with_vulkan_hw}
+%endif
 %global with_omx 0
 %global with_opencl 0
 %endif
-#%%global base_vulkan %%{?with_vulkan_hw:,amd}%%{!?with_vulkan_hw:%%{nil}}
+%global base_vulkan %{?with_vulkan_hw:,amd}%{!?with_vulkan_hw:%{nil}}
 %endif
 
 #%%ifnarch %%{ix86}
@@ -35,13 +35,13 @@ algorithms and decoding only VC1 algorithm.
 %if !0%{?rhel}
 %global with_intel_clc 0
 %endif
-#%%global intel_platform_vulkan %%{?with_vulkan_hw:,intel,intel_hasvk}%%{!?with_vulkan_hw:%%{nil}}
+%global intel_platform_vulkan %{?with_vulkan_hw:,intel,intel_hasvk}%{!?with_vulkan_hw:%{nil}}
 %endif
-#%%ifarch x86_64
-#%%if !0%%{?with_vulkan_hw}
-%global with_intel_vk_rt 0
-#%%endif
-#%%endif
+%ifarch x86_64
+%if !0%{?with_vulkan_hw}
+%global with_intel_vk_rt 1
+%endif
+%endif
 
 %ifarch aarch64 x86_64 %{ix86}
 %if !0%{?rhel}
@@ -55,7 +55,7 @@ algorithms and decoding only VC1 algorithm.
 %global with_tegra     0
 %global with_v3d       0
 %global with_xa        0
-#%%global extra_platform_vulkan %%{?with_vulkan_hw:,broadcom,freedreno,panfrost,imagination-experimental}%%{!?with_vulkan_hw:%%{nil}}
+%global extra_platform_vulkan %{?with_vulkan_hw:,broadcom,freedreno,panfrost,imagination-experimental}%{!?with_vulkan_hw:%{nil}}
 %endif
 
 %if !0%{?rhel}
@@ -69,7 +69,7 @@ algorithms and decoding only VC1 algorithm.
 %bcond_with valgrind
 %endif
 
-#%%global vulkan_drivers swrast%%{?base_vulkan}%%{?intel_platform_vulkan}%%{?extra_platform_vulkan}%%{?with_nvk:,nouveau}
+%global vulkan_drivers swrast%{?base_vulkan}%{?intel_platform_vulkan}%{?extra_platform_vulkan}%{?with_nvk:,nouveau}
 
 Name:           %{srcname}-freeworld
 Summary:        Mesa graphics libraries
@@ -206,6 +206,16 @@ Conflicts:      %{srcname}-vdpau-drivers%{?_isa}
 %description 	-n %{srcname}-vdpau-drivers-freeworld
 %{_description}
 %endif
+
+%package        -n %{srcname}-vulkan-drivers-freeworld
+Summary:        Mesa Vulkan drivers
+Requires:       vulkan%{_isa}
+Conflicts:      %{srcname}-vulkan%{?_isa}
+
+%description    -n %{srcname}-vulkan-drivers-freeworld
+The drivers with support for the Vulkan API.
+%{_description}
+
 %prep
 %autosetup -n %{srcname}-%{ver} -p1
 cp %{SOURCE1} docs/
@@ -213,6 +223,19 @@ cp %{SOURCE1} docs/
 %build
 # ensure standard Rust compiler flags are set
 export RUSTFLAGS="%build_rustflags"
+
+%if 0%{?with_nvk}
+export MESON_PACKAGE_CACHE_DIR="%{cargo_registry}/"
+# So... Meson can't actually find them without tweaks
+%define inst_crate_nameversion() %(basename %{cargo_registry}/%{1}-*)
+%define rewrite_wrap_file() sed -e "/source.*/d" -e "s/%{1}-.*/%{inst_crate_nameversion %{1}}/" -i subprojects/%{1}.wrap
+
+%rewrite_wrap_file proc-macro2
+%rewrite_wrap_file quote
+%rewrite_wrap_file syn
+%rewrite_wrap_file unicode-ident
+%rewrite_wrap_file paste
+%endif
 
 # We've gotten a report that enabling LTO for mesa breaks some games. See
 # https://bugzilla.redhat.com/show_bug.cgi?id=1862771 for details.
@@ -248,7 +271,7 @@ export RUSTFLAGS="%build_rustflags"
   -Dgbm=disabled \
   -Dglx=dri \
   -Degl=disabled \
-  -Dglvnd=false \
+  -Dglvnd=disabled \
 %if 0%{?with_intel_clc}
   -Dintel-clc=enabled \
 %endif
@@ -299,8 +322,8 @@ for i in libOSMesa*.so libGL.so ; do
 done
 popd
 
-# strip unneeded files from va-api and vdpau
-rm -rf %{buildroot}%{_datadir}/{drirc.d,glvnd,vulkan}
+# strip unneeded files from va-api and vdpau and vulkan
+rm -rf %{buildroot}%{_datadir}/glvnd
 rm -rf %{buildroot}%{_libdir}/{d3d,EGL,gallium-pipe,libGLX,pkgconfig}
 rm -rf %{buildroot}%{_includedir}/{d3dadapter,EGL,GL,KHR}
 rm -fr %{buildroot}%{_sysconfdir}/OpenGL
@@ -315,8 +338,7 @@ rm -fr %{buildroot}%{_libdir}/libxatracker.so*
 rm -fr %{buildroot}%{_includedir}/xa_*.h
 rm -fr %{buildroot}%{_libdir}/libMesaOpenCL.so*
 rm -fr %{buildroot}%{_libdir}/dri/*_dri.so
-rm -fr %{buildroot}%{_libdir}/libvulkan*.so
-rm -fr %{buildroot}%{_libdir}/libVkLayer_MESA_device_select.so
+rm -rf %{buildroot}%{_datadir}/drirc.d/00-mesa-defaults.conf
 
 %if 0%{?with_va}
 %files -n %{srcname}-va-drivers-freeworld
@@ -346,6 +368,38 @@ rm -fr %{buildroot}%{_libdir}/libVkLayer_MESA_device_select.so
 %{_libdir}/vdpau/libvdpau_virtio_gpu.so.1*
 %{_metainfodir}/org.mesa3d.vdpau.freeworld.metainfo.xml
 %license docs/license.rst
+%endif
+
+%files -n %{srcname}-vulkan-drivers-freeworld
+%{_libdir}/libvulkan_lvp.so
+%{_datadir}/vulkan/icd.d/lvp_icd.*.json
+%{_libdir}/libVkLayer_MESA_device_select.so
+%{_datadir}/vulkan/implicit_layer.d/VkLayer_MESA_device_select.json
+%if 0%{?with_vulkan_hw}
+%{_libdir}/libvulkan_radeon.so
+%{_datadir}/drirc.d/00-radv-defaults.conf
+%{_datadir}/vulkan/icd.d/radeon_icd.*.json
+%if 0%{?with_nvk}
+%{_libdir}/libvulkan_nouveau.so
+%{_datadir}/vulkan/icd.d/nouveau_icd.*.json
+%endif
+%ifarch %{ix86} x86_64
+%{_libdir}/libvulkan_intel.so
+%{_datadir}/vulkan/icd.d/intel_icd.*.json
+%{_libdir}/libvulkan_intel_hasvk.so
+%{_datadir}/vulkan/icd.d/intel_hasvk_icd.*.json
+%endif
+%ifarch aarch64 x86_64 %{ix86}
+%{_libdir}/libvulkan_broadcom.so
+%{_datadir}/vulkan/icd.d/broadcom_icd.*.json
+%{_libdir}/libvulkan_freedreno.so
+%{_datadir}/vulkan/icd.d/freedreno_icd.*.json
+%{_libdir}/libvulkan_panfrost.so
+%{_datadir}/vulkan/icd.d/panfrost_icd.*.json
+%{_libdir}/libpowervr_rogue.so
+%{_libdir}/libvulkan_powervr_mesa.so
+%{_datadir}/vulkan/icd.d/powervr_mesa_icd.*.json
+%endif
 %endif
 
 %changelog
